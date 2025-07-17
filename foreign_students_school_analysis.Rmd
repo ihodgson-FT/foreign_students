@@ -89,14 +89,29 @@ enrollment_long <- enrollment %>%
 Let's look at enrollment for the 20 non-profit schools with the highest shares of foreign students.
 
 ``` {r, echo = F}
-foreign_top20 %>% 
+# Create label positions for start and end of each line
+label_data <- foreign_top20 %>% 
   filter(control_hd2023 == 2) %>% 
-  head(n = 3) %>% 
   left_join(enrollment_long) %>% 
   rename(enrollment = value) %>% 
-  mutate(chart_name = paste(institution_name, ",", rmfrgncp_drvef2023, "per cent foreign (2023)")) %>% 
-  ggplot() +
-  geom_line(aes(x = year, y = enrollment)) + 
-  theme_minimal() + 
-  facet_wrap(facets = "chart_name", ncol = 1, scales = "free_y")
+  mutate(chart_name = paste0(institution_name," (",stabbr_hd2023,")", ", ", rmfrgncp_drvef2023, " per cent foreign (2023)")) %>% 
+  filter(year > 2012) %>% 
+  group_by(chart_name) %>%
+  filter(year == min(year) | year == max(year)) %>%
+  ungroup()
+
+# Main plot
+foreign_top20 %>% 
+  filter(control_hd2023 == 2) %>% 
+  left_join(enrollment_long) %>% 
+  rename(enrollment = value) %>% 
+  mutate(chart_name = paste0(institution_name," (",stabbr_hd2023,")", ", ", rmfrgncp_drvef2023, " per cent foreign (2023)")) %>% 
+  filter(year > 2012) %>% 
+  ggplot(aes(x = year, y = enrollment)) +
+  geom_line() +
+  geom_text(data = label_data,
+            aes(label = enrollment),
+            vjust = 0, size = 2.5) +
+  theme_minimal() +
+  facet_wrap(facets = "chart_name", ncol = 2, scales = "free_y")
 ```
