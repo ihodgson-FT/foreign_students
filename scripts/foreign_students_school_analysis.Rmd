@@ -1,0 +1,102 @@
+---
+title: "Foreign students data analysis"
+author: "Ian Hodgson"
+date: "2025-07-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+```
+
+## Share of foreign students
+
+``` {r, echo = F}
+foreign <- read_csv("data/IPEDS/foreign_enrollment.csv") %>% 
+  clean_names()
+
+foreign %>% filter(is.na(rmfrgncn_drvef2023)) %>% nrow()
+```
+
+More than half of observations do not list the number of foreign-born students. Will need to look into the reporting requirements for this indicator. In the meantime, what can we say about the type of institutions that don't report this figure.
+
+``` {r, echo = F}
+
+foreign %>% mutate(foreign_na_23 = is.na(rmfrgncn_drvef2023), 
+                   foreign_na_18 = is.na(rmfrgncn_drvef2018_rv)) %>% 
+  group_by(c21enprf_hd2023, 
+           foreign_na_23, 
+           foreign_na_18) %>% 
+  summarise(count = n())
+
+```
+
+The type of institution (mostly 2-year, mostly 4-year, mostly graduate, etc.) doesn't tell us much. It's also concerning that some schools will report the figure one year and not the next.
+
+### Control of school
+
+``` {r, echo = F} 
+foreign %>% mutate(foreign_na_23 = is.na(rmfrgncn_drvef2023), 
+                   foreign_na_18 = is.na(rmfrgncn_drvef2018_rv)) %>% 
+  group_by(control_hd2023, 
+           foreign_na_23, 
+           foreign_na_18) %>% 
+  summarise(count = n())
+
+```
+Control of school (public, private, non-profit) doesn't seem to shed any light either. 
+
+I'm going to leave this issue for now. I just need to find examples of schools with high or growing foreign shares and with declining or flat enrollment.
+
+
+``` {r, echo = f}
+foreign_top20 <- foreign %>% filter(!is.na(rmfrgncp_drvef2018_rv)) %>% 
+  arrange(control_hd2023, 
+          desc(rmfrgncp_drvef2023)) %>% 
+  group_by(control_hd2023) %>% 
+  mutate(count = 1:n()) %>% 
+  filter(count < 21) %>% 
+  select(institution_name, stabbr_hd2023, rmfrgncp_drvef2023)
+```
+
+Some notable schools on the list. Among the the publics: 
+* UC-Davis and UC-Irvine
+* Univeristy of Illinois Urbana-Champaign
+
+Among the non-profits: 
+* RISDI
+* The New School
+* NYU
+* Boston University
+* Brandeis
+* Carnegie Mellon
+* Emory
+* Grinnell
+
+## Enrollment declines
+
+``` {r, echo = F}
+enrollment <- read_csv("data/IPEDS/fall_enrollment.csv") %>% clean_names()
+
+enrollment_long <- enrollment %>% 
+  select(-x24) %>% 
+  pivot_longer(cols = c(3, 5:23)) %>% 
+  mutate(year = str_extract(name, "[0-9]{4}") %>% as.numeric())
+```
+
+Let's look at enrollment for the 20 non-profit schools with the highest shares of foreign students.
+
+``` {r, echo = F}
+foreign_top20 %>% 
+  filter(control_hd2023 == 2) %>% 
+  head(n = 3) %>% 
+  left_join(enrollment_long) %>% 
+  rename(enrollment = value) %>% 
+  mutate(chart_name = paste(institution_name, ",", rmfrgncp_drvef2023, "per cent foreign (2023)")) %>% 
+  ggplot() +
+  geom_line(aes(x = year, y = enrollment)) + 
+  theme_minimal() + 
+  facet_wrap(facets = "chart_name", ncol = 1, scales = "free_y")
+```
