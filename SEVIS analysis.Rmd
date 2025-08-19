@@ -1,0 +1,339 @@
+---
+title: "SEVIS analysis"
+author: "Ian Hodgson"
+date: "2025-08-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(tidyverse)
+library(DT)
+```
+
+``` {r read and clean data, include = F}
+df_data <- read_csv("data/SEVIS/sevis_data_raw.csv") %>% 
+  mutate(country_of_citizenship = country_of_citizenship %>% 
+           str_remove_all("\n") %>% 
+           str_squish(),
+         number_of_active_students = ifelse(is.na(number_of_active_students), 
+                                            active_students, 
+                                            number_of_active_students)) %>% 
+  filter(!is.na(number_of_active_students)) %>% 
+  mutate(year = year(date), 
+         month = month(date), 
+         half = ifelse(month <= 6, 1, 2))
+
+```
+## Data description and issues
+
+This analysis uses data from the Student and Exchange Visitor Information System 
+(SEVIS), the system that the Department of Homeland Security (DHS) uses to maintain 
+information on F and M students in the United States. This data includes the 
+students' country of citizenship, what U.S. school they attend and what they study.
+
+Until 2023, the data was available quarterly or three-times annually. After 2023
+the data is available monthly. Unfortunately, that means that year-over-year comparisions
+are difficult, if not impossible, prior to 2023.
+
+Below is a table showing the months available for each year.
+
+``` {r months available, echo = F}
+df_data %>% 
+  distinct(year, month) %>% 
+  datatable()
+```
+
+Most counties exhibit a saw-tooth pattern, where visas spike in September and then 
+fall through the year. For example, see Canada's enrollment trend.
+
+``` {r canada sawtooth, echo = F}
+df_data %>% 
+  filter(country_of_citizenship == "CANADA", year >= 2023) %>% 
+  ggplot() + 
+  geom_line(aes(x = date, y = number_of_active_students)) +
+  geom_vline(xintercept = as.Date("2024-12-01"), 
+             linetype = "dashed", color = "red") +
+  geom_vline(xintercept = as.Date("2016-12-01"), 
+             linetype = "dashed", color = "red") +
+  annotate("text", 
+           x = as.Date("2024-12-01")+2, 
+           y = max(df_data$number_of_active_students[df_data$country_of_citizenship=="CANADA"], na.rm = TRUE), 
+           label = "Trump elected", 
+           vjust = 0, hjust = 1.1, color = "red") +
+  theme_minimal()
+
+```
+
+This saw-tooth pattern tells us two things: 
+
+1) SEVIS data doesn't cover the same months every year prior to 2023. For example, 
+in 2015 we have Feb, Sept, Dec and in 2016 we have March, July, Nov. That means we
+can't compare year-over-year change for most years or use an annual average. Additionally,
+we can't compare a month in one year to an adjacent month in the prior year. For
+example, we can't compare Dec. 2015 to Nov. 2016.
+
+2) We should be careful about comparing year-over-year cycles. For example, 
+comparing H12025 with H12024 may tell us more about the 2024-25
+school year vs the 2023-24 school year, rather than what enrollment will look 
+like in the 2025-26 school year.
+
+## Where are students coming from?
+
+### Overall trends
+
+Let's look at the total number of foreign students since 2015. We'll compare 
+December and March numbers, since the two months have good coverage across years.
+These numbers include both undergraduates and graduate students.
+
+The results aren't surprising -- we see a large drop in late 2020, early 2021 
+during the Covid-19 pandemic, which recovers by 2024 and total foreign students 
+pick up in early 2025.
+
+``` {r overall, echo = F}
+df_data %>% 
+  group_by(year, month, date) %>%
+  summarise(number_of_active_students = sum(number_of_active_students)) %>% 
+  filter(month %in% c(3, 12)) %>% 
+  mutate(month_char = as.character(month)) %>% 
+  ggplot() + 
+  geom_line(aes(x = date, y = number_of_active_students, col = month_char)) + 
+  geom_point(aes(x = date, y = number_of_active_students, col = month_char)) +
+  theme_minimal()
+```
+
+### Country of origin
+
+#### China remains stagnant
+
+Comparing the student numbers for 2022-2024, we can see that China
+has remained stagnant after a large drop during the Covid-19 pandemic. 
+
+``` {r china, echo = F}
+
+df_data %>% 
+  filter(month == 3,
+         country_of_citizenship == "CHINA") %>% 
+  mutate(month_char = as.character(month)) %>% 
+  ggplot() + 
+  geom_line(aes(x = date, y = number_of_active_students)) + 
+  geom_point(aes(x = date, y = number_of_active_students)) +
+  theme_minimal() + 
+  labs(title = "China's enrollment stagnated after the Covid-19 pandemic")
+  
+  
+```
+
+#### Other countries are making up the difference
+
+Instead, the US has look to other countries, namely India, to fill that gap. Brazil, Nepal, Nigeria and 
+Bangladesh also contribute to making up some of that loss. In fact, India surpassed 
+China as the largest exporter of students in 2023.
+
+``` {r boom countries, echo = F}
+df_data %>% 
+  filter(month == 3,
+         country_of_citizenship %in% c("INDIA", 
+                                       "BRAZIL", 
+                                       "NEPAL", 
+                                       "NIGERIA", 
+                                       "BANGLADESH")) %>% 
+  mutate(month_char = as.character(month)) %>% 
+  ggplot() + 
+  geom_line(aes(x = date, y = number_of_active_students)) + 
+  geom_point(aes(x = date, y = number_of_active_students)) +
+  theme_minimal() + 
+  facet_wrap(facets = "country_of_citizenship", scale="free_y") + 
+  labs(title = "The slowdown in Chinese students was more than offset by
+       an increase in students from elsewhere")
+```
+
+### Table of trends since 2022
+
+Look at September values from 2022-2024
+
+``` {r sept enroll, echo = F}
+df_data %>% 
+  filter(month == 9, 
+         year >= 2022) %>% 
+  group_by(country_of_citizenship) %>% 
+  select(country_of_citizenship, year, number_of_active_students) %>% 
+  pivot_wider(values_from = number_of_active_students, 
+              names_from = year, 
+              names_prefix = "yr_") %>% 
+  arrange(desc(yr_2024)) %>% 
+  mutate(chng_22_23 = round((yr_2023/yr_2022-1)*100,1), 
+         chng_23_24 = round((yr_2024/yr_2023-1)*100, 1)) %>% 
+  datatable()
+
+```
+
+## Where are students going?
+
+#### Which states are growing the fastest since the pandemic?
+
+Texas's international student population is booming -- growing at more than 20 per 
+cent since the start of the pandemic. On a proportional basis, Missouri was the fastest
+growing, with a nearly 60% increase in foreign students since 2019.
+
+On net, California's foreign student population fell by the most -- dropping by 
+15 percent since 2019.
+
+``` {r state enroll, echo = F}
+
+df_data %>% 
+  select(country_of_citizenship, 
+         ak:wy, 
+         date, year, month, half) %>% 
+  pivot_longer(cols = ak:wy,
+               names_to = "state",
+               values_to = "number_of_students") %>% 
+  mutate(state = toupper(state)) %>% 
+  filter(month == 3, 
+         year >= 2019) %>% 
+  group_by(state, year) %>% 
+  select(state, year, number_of_students) %>%
+  summarise(number_of_students = sum(number_of_students)) %>% 
+  pivot_wider(values_from = number_of_students, 
+              names_from = year, 
+              names_prefix = "yr_") %>% 
+  mutate(chng_19_25 = yr_2025 - yr_2019, 
+         pct_19_25 = round((yr_2025/yr_2019-1)*100,1)) %>%  
+    arrange(desc(chng_19_25)) %>% 
+  datatable()
+
+```
+
+#### What states are losing Chinese students fastest since the pandemic
+
+California saw the largest losses, with the share of Chinese students dropping by 
+nearly a third from 2019 to 2025. Pennsyvania lost more than a third and Ohio lost
+more than half of its pre-pandemic population of Chinese students.
+
+``` {r state enroll china, echo = F}
+
+df_data %>% 
+  select(country_of_citizenship, 
+         ak:wy, 
+         date, year, month, half) %>% 
+  pivot_longer(cols = ak:wy,
+               names_to = "state",
+               values_to = "number_of_students") %>% 
+  mutate(state = toupper(state)) %>% 
+  filter(month == 3, 
+         year >= 2019,
+         country_of_citizenship == "CHINA") %>% 
+  group_by(state, year) %>% 
+  select(country_of_citizenship, state, year, number_of_students) %>%
+  summarise(number_of_students = sum(number_of_students)) %>% 
+  pivot_wider(values_from = number_of_students, 
+              names_from = year, 
+              names_prefix = "yr_") %>% 
+  mutate(chng_19_25 = yr_2025 - yr_2019, 
+         pct_19_25 = round((yr_2025/yr_2019-1)*100,1)) %>% 
+    arrange(desc(chng_19_25)) %>% 
+  datatable()
+
+```
+
+#### Year-over-year trends from the past summer.
+
+Let's look at average foreign student population this summer compared to past. I'm 
+looking at June and July students.
+
+##### Overall
+
+While the number of international students is still growing in 2025, that growth has slowed
+significantly from the year before. Overall, there are roughly 50,000 more foreign 
+students in July 2025 than 2024 and roughly 150,000 more than in 2023.
+
+Here each line represents a year from January to July. The smaller gap between 2024 
+(green) and 2025 (blue) compared to that between 2023 (red) and 2024 (green) indicates the 
+growth rate is slowing.
+
+``` {r overall recent trend, echo = F}
+
+
+df_data %>% 
+  group_by(year, month, date) %>%
+  summarise(number_of_active_students = sum(number_of_active_students)) %>% 
+  filter(month %in% 1:7,
+         year >= 2023) %>% 
+  mutate(year_char = as.character(year)) %>% 
+  ggplot() + 
+  geom_line(aes(x = month, y = number_of_active_students, col = year_char)) + 
+  geom_point(aes(x = month, y = number_of_active_students, col = year_char)) +
+  theme_minimal()
+
+```
+
+
+##### By country of origin
+
+Taking the same analysis to the top 6 countries of origin, we can see a mixed pattern.
+The growth rate has slowed for India and Canada, but increased for Brazil and Nepal. 
+China, as previously noted, has seen decreasing enrollment. 
+
+``` {r overall recent trend - top countries, echo = F}
+
+temp <- df_data %>% 
+  group_by(country_of_citizenship, year, month, date) %>%
+  filter(year == 2025, 
+         month == 7) %>% 
+  arrange(desc(number_of_active_students)) %>% 
+  head()
+
+df_data %>% 
+  group_by(country_of_citizenship, year, month, date) %>%
+  filter(month %in% 1:7,
+         year >= 2023, 
+         country_of_citizenship %in% temp$country_of_citizenship) %>% 
+  mutate(year_char = as.character(year)) %>% 
+  ggplot() + 
+  geom_line(aes(x = month, y = number_of_active_students, col = year_char)) + 
+  geom_point(aes(x = month, y = number_of_active_students, col = year_char)) +
+  facet_wrap(facets = "country_of_citizenship", scale = "free_y") +
+  theme_minimal()
+
+```
+
+##### By state
+
+Florida and Texas have seen consistent gains from 2023 to 2025, while California, Pennsylvania and Massachusetts 
+stopped growing after 2024.
+
+``` {r recent trend - by state, echo = F}
+
+df_state <- df_data %>% 
+  select(country_of_citizenship, 
+         ak:wy, 
+         date, year, month, half) %>% 
+  pivot_longer(cols = ak:wy,
+               names_to = "state",
+               values_to = "number_of_active_students") %>% 
+  mutate(state = toupper(state)) %>% 
+  group_by(state, year, month, date) %>% 
+  select(state, year, number_of_active_students) %>%
+  summarise(number_of_active_students = sum(number_of_active_students))
+
+temp <- df_state %>% 
+  ungroup() %>% 
+  filter(year == 2025, 
+         month == 7) %>% 
+  arrange(desc(number_of_active_students)) %>% 
+  head(n = 9)
+
+df_state %>% 
+  group_by(state, year, month, date) %>%
+  filter(month %in% 1:7,
+         year >= 2023, 
+         state %in% temp$state) %>% 
+  mutate(year_char = as.character(year)) %>% 
+  ggplot() + 
+  geom_line(aes(x = month, y = number_of_active_students, col = year_char)) + 
+  geom_point(aes(x = month, y = number_of_active_students, col = year_char)) +
+  facet_wrap(facets = "state", scale = "free_y") +
+  theme_minimal()
+
+```
