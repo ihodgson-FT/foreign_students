@@ -59,6 +59,7 @@ mean_students <- df_data %>% group_by(country_of_citizenship) %>%
 
 df_data %>% 
   filter(country_of_citizenship %in% mean_students$country_of_citizenship[1:10]) %>% 
+  filter(year)
   ggplot() + 
   geom_smooth(aes(x = date, y = doctorate)) + 
   geom_point(aes(x = date, y = doctorate), alpha = .5) + 
